@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "nrf24l01.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,7 +31,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+/* Must match the Arduino sketch (RF24): openWritingPipe("JOY01"), setChannel(76) */
+#define RADIO_ADDR      ((const uint8_t *)"JOY01")
+#define RADIO_CHANNEL   76
+#define EXPECTED_BYTE   0x45    /* first payload byte that turns LD2 on */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,7 +46,10 @@
 SPI_HandleTypeDef hspi1;
 
 /* USER CODE BEGIN PV */
-
+/* Globals so they can be watched in CubeIDE Live Expressions while debugging */
+nrf24_status_t init_status;
+uint32_t       rx_count;
+uint8_t        last_buf[32];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,7 +96,25 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+  /* Defaults match RF24 radio.begin(); override what the sketch overrides. */
+  nrf24_config_t cfg = NRF24_CONFIG_RF24_DEFAULTS;
+  cfg.channel   = RADIO_CHANNEL;
+  cfg.data_rate = NRF24_250KBPS;
+  cfg.pa_level  = NRF24_PA_LOW;
 
+  init_status = nrf24_init(&cfg);
+  if (init_status != NRF24_OK)
+  {
+    /* Radio not responding (wiring/power) or not a '+' chip: fast blink forever */
+    while (1)
+    {
+      HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+      HAL_Delay(100);
+    }
+  }
+
+  nrf24_open_reading_pipe(1, RADIO_ADDR);
+  nrf24_start_listening();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -100,6 +124,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (nrf24_available(NULL))
+    {
+      nrf24_read(last_buf, sizeof last_buf);
+      rx_count++;
+      HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin,
+                        (last_buf[0] == EXPECTED_BYTE) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
   }
   /* USER CODE END 3 */
 }
