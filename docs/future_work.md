@@ -32,5 +32,5 @@ The `I2C_Master_TX` / `I2C_Master_RX` busy-wait loops have no timeout, so a stuc
 ## 4. Speed ramp in the app layer
 "Gradually go to speed X" needs a clock, so it belongs above the driver: every N ms, call `EMDM_Change_Drive_Speed()` by a small step until the target is reached.
 
-## 5. Arduino command sender
-`demo_emdm_radio_run()` expects packet byte 0 = command (`0x01` FORWARD, `0x02` SLOW, `0x03` STOP) and byte 1 = step size (0 = default of 5). The `nrf_tx_0x45` sketch still sends `0x45`, which the demo ignores. Move the command IDs into a header shared with the Arduino once that side is written.
+## 5. Shared command IDs
+Done: `arduino_emg_acquisition/nrf_tx_cmd` sends `[command, step]` from Serial Monitor keys. The command IDs (`0x01` FORWARD, `0x02` SLOW, `0x03` STOP) are still defined twice, in `Demos/demo_emdm.c` and in the sketch, so they must be changed in both places. A shared header is possible later, but Arduino sketches can only include files outside their folder through a library or a copied file.

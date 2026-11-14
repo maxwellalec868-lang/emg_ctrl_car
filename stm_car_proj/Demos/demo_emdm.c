@@ -40,7 +40,7 @@ extern void HAL_Delay(uint32_t Delay);
 #define RADIO_ADDR          ((const uint8_t *)"JOY01")
 #define RADIO_CHANNEL       76
 
-// Radio commands (byte 0 of the payload). Move to a header shared with the Arduino later
+// Radio commands (byte 0 of the payload). Must match arduino_emg_acquisition/nrf_tx_cmd/nrf_tx_cmd.ino
 #define CMD_FORWARD         0x01    // speed up by step
 #define CMD_SLOW            0x02    // slow down by step, never below 0
 #define CMD_STOP            0x03    // stop immediately

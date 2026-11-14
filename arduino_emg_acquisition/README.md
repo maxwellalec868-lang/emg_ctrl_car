@@ -4,9 +4,10 @@ Arduino code for the **Arduino Nano ESP32** (ESP32-S3) side of the EMG car.
 
 | Sketch | What it does |
 |---|---|
-| [nrf_tx_0x45](nrf_tx_0x45/nrf_tx_0x45.ino) | Radio link test: sends `0x45` every 100 ms to the STM32 (LD2 turns on when it's received) |
+| [nrf_tx_0x45](nrf_tx_0x45/nrf_tx_0x45.ino) | Radio link test: sends `0x45` every 100 ms. STM32 side: `demo_nrf_rx_led_run()` (LD2 turns on when it's received) |
+| [nrf_tx_cmd](nrf_tx_cmd/nrf_tx_cmd.ino) | Drive commands: type `f` (FORWARD), `s` (SLOW) or `x` (STOP) in the Serial Monitor. STM32 side: `demo_emdm_radio_run()` |
 
-## Radio settings (must match `stm_car_proj/Core/Src/main.c`)
+## Radio settings (must match `stm_car_proj/Demos/`)
 Address `"JOY01"`, channel 76, 250 kbps, PA LOW. Everything else uses the RF24 defaults
 (32-byte payload, auto-ACK, CRC16). Both radios must be **nRF24L01+** modules.
 
@@ -51,3 +52,15 @@ A 10 µF capacitor across the radio's VCC/GND is recommended.
 - **NO ACK:** the STM32 isn't receiving. Check `init_status` in CubeIDE Live Expressions and the
   STM32 radio wiring.
 - **ACK but LD2 stays off:** inspect `last_buf[0]` and `rx_count` on the STM32 in the debugger.
+
+## Using nrf_tx_cmd
+Flash it the same way as above (open `nrf_tx_cmd/nrf_tx_cmd.ino` in step 4). In the Serial Monitor,
+type into the **Message** box at the top and press **Enter**:
+- `f`: speed up one step (default 5, capped at 30 on the STM32)
+- `s`: slow down one step (stops at 0, never reverses)
+- `x`: stop now
+- `fff`: three steps at once
+
+A STOP is sent once at startup. **There is no failsafe yet:** if the link drops, the car keeps
+its last speed, so keep the wheels off the ground or a hand on the power switch. On the STM32,
+watch `cmd_rx_count`, `last_cmd` and `emdm.EMDM_DRIVE_SPEED` in Live Expressions.
