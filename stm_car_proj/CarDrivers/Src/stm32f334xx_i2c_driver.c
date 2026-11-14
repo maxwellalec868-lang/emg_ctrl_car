@@ -239,7 +239,7 @@ void I2C_Init(I2C_Handle_t* pI2CHandle){
 	else{
 		uint32_t tmp_CR1 = pI2CHandle->pI2C1->CR1;
 		tmp_CR1 &= ~(0xFU << 8);
-		tmp_CR1 |= (pI2CHandle->I2C_PinConfig.I2C_DIGI_FILTER_CTRL);
+		tmp_CR1 |= ((uint32_t)pI2CHandle->I2C_PinConfig.I2C_DIGI_FILTER_CTRL << 8); // DNF is bits 8-11 (without the shift this wrote PE/TXIE/RXIE/ADDRIE)
 
 		pI2CHandle->pI2C1->CR1 = tmp_CR1;
 	}
@@ -454,6 +454,10 @@ I2C_Status_t  I2C_Master_TX(I2C_Handle_t* pI2CHandle, uint8_t* pData_buf, uint8_
 	// TODO: Add timeout in this so it doesnt hang forever if an error occurss (STOPF never set). Fine for now since doing early testing
 	while (pI2CHandle->pI2C1->ISR & (1U << 15));
 
+	// Clear leftover NACKF/STOPF from a previous transfer. After a NACK the hardware sends STOP but STOPF is
+	// never cleared, so without this the next AUTOEND transfer would see STOPF already set and "finish" instantly.
+	I2C_Clear_Flags(pI2CHandle->pI2C1);
+
 	I2C_Start(pI2CHandle->pI2C1);
 	uint8_t ind = 0;
 
@@ -559,6 +563,8 @@ I2C_Status_t I2C_Master_RX(I2C_Handle_t* pI2CHandle, uint8_t* pData_buf, uint8_t
 		if (repeated_start != 1){ // If it = 1 then this while loop shouldnt execute because line will be busy forever
 			while (pI2CHandle->pI2C1->ISR & (1U << 15));
 		}
+
+		I2C_Clear_Flags(pI2CHandle->pI2C1); // Clear leftover NACKF/STOPF (see I2C_Master_TX)
 
 		I2C_Start(pI2CHandle->pI2C1);
 		uint8_t ind = 0;
