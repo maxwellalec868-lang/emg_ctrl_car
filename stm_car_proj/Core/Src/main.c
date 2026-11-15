@@ -92,8 +92,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* Pick ONE demo (see Demos/demos.h). Demos never return. */
 //  demo_nrf_rx_led_run();
-   demo_emdm_bench_run();
-  // demo_emdm_radio_run();
+//   demo_emdm_bench_run();
+   demo_emdm_radio_run();
   /* USER CODE END 2 */
 
   /* Infinite loop */
