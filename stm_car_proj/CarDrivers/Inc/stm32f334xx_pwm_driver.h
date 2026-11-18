@@ -26,7 +26,7 @@ typedef struct{
 	uint8_t PWM_Mode;				/*<Possible Values from @PWM_MODES>*/
 	uint8_t PWM_Preload;			/*<Possible Values from @PWM_PRELOAD>*/
 	uint8_t PWM_Op_Pol;				/*<Possible Values from @PWM_OP_POLARITY>*/
-	uint8_t PWM_Op_Cmp_Val;			/*<Possible Values from @PWM_OUTPUT_COMPARE> TODO: NOT USED YET HARD CODED IN DRIVER */
+	uint32_t PWM_Op_Cmp_Val;		/*<Initial CCR value (pulse width) in timer ticks, loaded by pwm_init(). 0 = output stays low>*/
 } PWM_PinConfig_t;
 
 
@@ -154,6 +154,9 @@ void pwm_start(PWM_Handle_t* pTIMHandle); //MAY NEED TO MODIFY THIS
 void pwm_stop(PWM_Handle_t* pTIMHandle);
 
 void pwm_PeriClockControl(uint8_t EnorDi, uint8_t tmr_select);
+
+// Sets the compare value (pulse width in timer ticks) for channel 1. Takes effect at the next period when preload is enabled.
+void pwm_set_compare(PWM_Handle_t* pTIMHandle, uint32_t value);
 
 // IMPROVE ALL ASPECTS OF THESE !!!
 // THIS FUNCTION WILL SET THE PRESCALAR TO OBTAIN COUNTER_FREQ PARAM

@@ -19,9 +19,10 @@ void pwm_PeriClockControl(uint8_t EnorDi, uint8_t tmr_select){
 	else if(EnorDi == DISABLE && tmr_select == TIM_SELECT_2){
 		TIM2_PCLK_DI();
 	}
-	else{
+	else if(EnorDi == DISABLE && tmr_select == TIM_SELECT_3){
 		TIM3_PCLK_DI();
 	}
+	// Any other input does nothing
 }
 
 
@@ -76,10 +77,10 @@ void pwm_init(PWM_Handle_t* pTIMHandle){
 	}
 
 // (i) Configure output compare register by setting an initial value for the duty cycle (MAY MOVE THIS TO ITS OWN FUNCTION)
-	pTIMHandle->pTIMx->CCR1 = 5; // Starting off with a duty cycle of 500; THIS IS FAIRLY SPECIFIC TO DIMMING LED EXAMPLE, MAY NEED TO CHANGE THIS OR ACCEPT INPUT FROM MAIN
+	pTIMHandle->pTIMx->CCR1 = pTIMHandle->PWM_PinConfig.PWM_Op_Cmp_Val; // Initial pulse width (in timer ticks) set by the caller
 
 // (j) Force an update using EGR reg bit field UG to latch PSC/ARR/CCR instantly. Helps ensure no glitches when running
-	pTIMHandle->pTIMx->EGR |= (1 << TIM_EGR_UG_POS);
+	pTIMHandle->pTIMx->EGR = (1 << TIM_EGR_UG_POS); // EGR is write-only, so write the bit directly (no read-modify-write)
 
 }
 
@@ -90,6 +91,11 @@ void pwm_start(PWM_Handle_t* pTIMHandle){
 
 	// (b) Enable Counter
 	pTIMHandle->pTIMx->CR1 |= (1 << TIM_CR1_CEN_POS);
+}
+
+// Channel 1 only (same as the rest of this driver). With preload enabled, the new value takes effect at the next period.
+void pwm_set_compare(PWM_Handle_t* pTIMHandle, uint32_t value){
+	pTIMHandle->pTIMx->CCR1 = value;
 }
 
 void pwm_stop(PWM_Handle_t* pTIMHandle){

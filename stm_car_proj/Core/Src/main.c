@@ -93,7 +93,8 @@ int main(void)
   /* Pick ONE demo (see Demos/demos.h). Demos never return. */
 //  demo_nrf_rx_led_run();
 //   demo_emdm_bench_run();
-   demo_emdm_radio_run();
+//   demo_emdm_radio_run();
+  demo_pwm_turn_test();
   /* USER CODE END 2 */
 
   /* Infinite loop */

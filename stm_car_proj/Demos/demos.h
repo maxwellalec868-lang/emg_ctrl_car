@@ -27,4 +27,7 @@ void demo_emdm_bench_run(void);
 /* demo_emdm.c: full system. Radio commands (FORWARD/SLOW/STOP) drive the motors. */
 void demo_emdm_radio_run(void);
 
+/* demo_pwm_turning.c: Test the turning capabilities of the car using the PWM driver*/
+void demo_pwm_turn_test(void);
+
 #endif /* DEMOS_H_ */
