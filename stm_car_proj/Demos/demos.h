@@ -30,4 +30,7 @@ void demo_emdm_radio_run(void);
 /* demo_pwm_turning.c: Test the turning capabilities of the car using the PWM driver*/
 void demo_pwm_turn_test(void);
 
+/* demo_pwm_steering.c: Car steering servo (LD-1501MG). Eases center -> right -> left -> center within calibrated limits. */
+void demo_pwm_steering_run(void);
+
 #endif /* DEMOS_H_ */
