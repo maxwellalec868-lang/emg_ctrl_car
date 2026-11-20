@@ -325,7 +325,9 @@ I2C_Status_t I2C_Config_Master(I2C_Handle_t* pI2CHandle){
 	else if (pI2CHandle->I2C_PinConfig.I2C_ADDR_MODE == ADDR_MODE_10BIT){
 		pI2CHandle->pI2C1->CR2 |= (1U << 11); // Set to 10-bit addr mode
 
+
 		uint16_t slv_addr = pI2CHandle->I2C_PinConfig.I2C_SLAVE_ADDR & 0x3FF;
+
 
 		pI2CHandle->pI2C1->CR2 &= ~(0x3FFU << 0); // Clears first 10-bits of CR2 which is SADD[9:0]
 		pI2CHandle->pI2C1->CR2 |= slv_addr;

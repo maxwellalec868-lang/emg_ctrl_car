@@ -33,4 +33,8 @@ void demo_pwm_turn_test(void);
 /* demo_pwm_steering.c: Car steering servo (LD-1501MG). Eases center -> right -> left -> center within calibrated limits. */
 void demo_pwm_steering_run(void);
 
+/*full_drive_demo.c: Demo that will receive input from Arduino over nRF radio and send controls to STM32 so the car
+ * is fully driveable from keyboard.*/
+void demo_full_PC_car_ctrl(void);
+
 #endif /* DEMOS_H_ */

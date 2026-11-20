@@ -21,8 +21,10 @@ Notes only. This folder is outside `stm_car_proj/`, so nothing here affects buil
 
 Current setting: **`GPIO_PU`** (not yet verified).
 
-## 2. Radio failsafe / heartbeat (deferred)
-Right now the car **keeps its last speed if the radio link drops**.
+## 2. Radio failsafe / heartbeat
+**Done in `Demos/full_drive_demo.c`:** `pc_drive.py` sends the key mask every 50 ms (heartbeat), and the STM32 does an emergency stop if no packet arrives for 200 ms (`KEY_TIMEOUT_MS`).
+
+**Still open in `demo_emdm_radio_run()`:** the car **keeps its last speed if the radio link drops**.
 - STM32 side: if the speed is not 0 and no valid packet arrives for about 500 ms, call `EMDM_Stop()`.
 - Arduino side: send a periodic `HEARTBEAT` command (e.g. `0x00`) while idle, so that silence means "link lost" rather than "no button pressed".
 
