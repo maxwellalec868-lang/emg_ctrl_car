@@ -6,16 +6,17 @@ Arduino code for the **Arduino Nano ESP32** (ESP32-S3) side of the EMG car.
 |---|---|
 | [nrf_tx_0x45](nrf_tx_0x45/nrf_tx_0x45.ino) | Radio link test: sends `0x45` every 100 ms. STM32 side: `demo_nrf_rx_led_run()` (LD2 turns on when it's received) |
 | [nrf_tx_cmd](nrf_tx_cmd/nrf_tx_cmd.ino) | Drive commands: type `f` (FORWARD), `s` (SLOW) or `x` (STOP) in the Serial Monitor. STM32 side: `demo_emdm_radio_run()` |
-| [nrf_uart_bridge](nrf_uart_bridge/nrf_uart_bridge.ino) | EMG setup: receives command frames from the Uno on D0 (RX0, 57600 baud) and transmits them over the nRF. STM32 side: `demo_full_PC_car_ctrl()` (or `demo_nrf_rx_led_run()` with the link test) |
+| [nrf_tx_drive](nrf_tx_drive/nrf_tx_drive.ino) | Forwards every byte from USB serial (115200) over the nRF. Used by `pc_drive.py` (keyboard) and by the EMG setup below. STM32 side: `demo_full_PC_car_ctrl()` |
 
-**Arduino Uno sketches** (Uno with 2 Heart & Brain SpikerShields stacked; no radio on the Uno, see
-[docs/uno_spikershield_nrf_plan.md](../docs/uno_spikershield_nrf_plan.md) for why and for the wiring):
+**EMG setup** (Uno with 2 Heart & Brain SpikerShields stacked + the Nano running `nrf_tx_drive`, both on
+USB to the laptop, no wires between them; see [docs/uno_spikershield_nrf_plan.md](../docs/uno_spikershield_nrf_plan.md)):
 
-| Sketch | What it does |
+| File | What it does |
 |---|---|
-| [uno_link_test_0x45](uno_link_test_0x45/uno_link_test_0x45.ino) | Link test: sends `0x45` frames on D2 to `nrf_uart_bridge` every 100 ms. STM32 side: `demo_nrf_rx_led_run()` |
-| [full_2_channel_wireless_ctrl_alg](full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino) | A0/A1 EMG at 1 kHz → PC over USB; PC command byte → D2 → `nrf_uart_bridge` → STM32 |
-| [spikershield-interface-three-channel](spikershield-interface-three-channel.ino) | Original 3-channel acquisition (A0–A2) for the MATLAB live plot |
+| [full_2_channel_wireless_ctrl_alg.ino](full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino) | **Uno:** samples A0/A1 at 1 kHz, streams `"%04d %04d"` lines over USB at 250000 baud |
+| [emg_ctrl_bridge.m](full_2_channel_wireless_ctrl_alg/emg_ctrl_bridge.m) | **MATLAB:** reads the Uno, runs `control_algorithm()`, sends the drive byte to the Nano every 50 ms, live plot. `emg_ctrl_bridge` alone lists the ports |
+| [parse_emg_chunk.m](full_2_channel_wireless_ctrl_alg/parse_emg_chunk.m) | **MATLAB:** parses the Uno's serial text (used by `emg_ctrl_bridge.m`) |
+| [spikershield-interface-three-channel](spikershield-interface-three-channel.ino) | **Uno:** original 3-channel acquisition (A0–A2) for the MATLAB live plot |
 
 ## Radio settings (must match `stm_car_proj/Demos/`)
 Address `"JOY01"`, channel 76, 250 kbps, PA LOW. Everything else uses the RF24 defaults
@@ -24,7 +25,7 @@ Address `"JOY01"`, channel 76, 250 kbps, PA LOW. Everything else uses the RF24 d
 ## Wiring
 | nRF24L01 | Nano ESP32 |
 |---|---|
-| VCC | **3V3** (never 5V/VBUS) |
+| VCC | Bare module: **3V3** (never 5V/VBUS). On an HW-200 adapter (PA+LNA module): **VBUS** (5V), the adapter regulates to 3.3V |
 | GND | GND |
 | CE | D9 |
 | CSN | D10 |
