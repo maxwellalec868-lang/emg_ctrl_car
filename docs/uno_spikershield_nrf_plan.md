@@ -118,15 +118,23 @@ while electrodes are on a person. The SpikerShields are not isolated from the US
    at **250000**. You should see `# READY ...`, a stream of `0512 0498`-style lines, and
    `# overflow=0` once a second. Touch the electrodes or flex, and the numbers on that channel should
    change. **Close the Serial Monitor.**
-3. **Both, from MATLAB (dry run):** `cd` to `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg`,
+3. **USB flow test (no radio, no car):** this proves the Uno → MATLAB → Nano path on its own.
+   - Flash `usb_flow_test/uno_usb_counter` to the Uno and `usb_flow_test/nano_usb_echo` to the Nano.
+     The Nano's LED turns blue.
+   - In MATLAB, `cd` to `arduino_emg_acquisition/usb_flow_test` and run
+     `usb_flow_test("COMx", "COMy")`. Expect `PASS` (about 1000 lines/s, 0 lost, 0 corrupted, every
+     Nano reply correct).
+   - Afterwards, flash `full_2_channel_wireless_ctrl_alg` back onto the Uno and `nrf_tx_drive` back
+     onto the Nano.
+4. **Both, from MATLAB (dry run):** `cd` to `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg`,
    then:
    - `emg_ctrl_bridge` lists the ports.
    - `emg_ctrl_bridge("COMx", "COMy")` runs a dry run (only E-STOP is sent).
    - Expected: the live plot scrolls, the title shows about 1000 samples/s, the Nano's LED is green,
      and STM32 `cmd_rx_count` climbs at about 20/s while the car stays stopped.
    - Close the figure: "Sent E-STOP. Ports closed."
-4. **Noise check:** compare the A0/A1 traces with the Nano plugged in and unplugged.
-5. **Live:** tune `control_algorithm()`, then run `emg_ctrl_bridge("COMx", "COMy", false)`. Keep the
+5. **Noise check:** compare the A0/A1 traces with the Nano plugged in and unplugged.
+6. **Live:** tune `control_algorithm()`, then run `emg_ctrl_bridge("COMx", "COMy", false)`. Keep the
    wheels off the ground first.
 
 ---

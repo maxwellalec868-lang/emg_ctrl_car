@@ -16,6 +16,7 @@ USB to the laptop, no wires between them; see [docs/uno_spikershield_nrf_plan.md
 | [full_2_channel_wireless_ctrl_alg.ino](full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino) | **Uno:** samples A0/A1 at 1 kHz, streams `"%04d %04d"` lines over USB at 250000 baud |
 | [emg_ctrl_bridge.m](full_2_channel_wireless_ctrl_alg/emg_ctrl_bridge.m) | **MATLAB:** reads the Uno, runs `control_algorithm()`, sends the drive byte to the Nano every 50 ms, live plot. `emg_ctrl_bridge` alone lists the ports |
 | [parse_emg_chunk.m](full_2_channel_wireless_ctrl_alg/parse_emg_chunk.m) | **MATLAB:** parses the Uno's serial text (used by `emg_ctrl_bridge.m`) |
+| [usb_flow_test/](usb_flow_test/usb_flow_test.m) | **Test only, no radio:** `uno_usb_counter` (Uno) + `nano_usb_echo` (Nano) + `usb_flow_test.m` check that data flows Uno → MATLAB → Nano with no lost or corrupted bytes. Prints PASS/FAIL |
 | [spikershield-interface-three-channel](spikershield-interface-three-channel.ino) | **Uno:** original 3-channel acquisition (A0–A2) for the MATLAB live plot |
 
 ## Radio settings (must match `stm_car_proj/Demos/`)
