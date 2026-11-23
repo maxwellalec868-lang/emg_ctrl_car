@@ -40,7 +40,7 @@ the carrier, but it hasn't been confirmed (see Questions).
 
 ### 1.2 Pin map
 
-| nRF24L01+ | Uno | ICSP header | Why |
+| nRF24L01+ | Uno pin (wire here, top of the stack) | ICSP equivalent (only if you can't reach D11–D13) | Why |
 |---|---|---|---|
 | VCC | **3.3V** (never 5V) | – | nRF supply max is 3.6 V |
 | GND | GND | pin 6 | |
@@ -53,9 +53,17 @@ the carrier, but it hasn't been confirmed (see Questions).
 
 Add a **10 µF (or larger) capacitor across the radio's VCC/GND**, right at the module.
 
-ICSP pinout (2×3 header next to the ATmega328P, pin 1 has the dot):
-`1 MISO · 2 5V · 3 SCK · 4 MOSI · 5 RESET · 6 GND`. On the Uno, D11/D12/D13 and the ICSP pins are the
-**same signals**, so use whichever one you can physically reach.
+**Connect SCK/MOSI/MISO to D13/D11/D12 on the top shield's header.** On the Uno these are the same
+signals as ICSP pins 3/4/1, so you never need the ICSP header. The 3/4/1 in that column are ICSP pin
+numbers, not Arduino pin numbers.
+
+This works as long as both shields pass D11–D13 through (stacking headers whose pins stick out the top).
+To check, stack the shields and use a multimeter in continuity mode: top shield's D13 ↔ Uno ICSP pin 3,
+D11 ↔ ICSP pin 4, D12 ↔ ICSP pin 1. A beep on all three means the top of the stack carries SPI.
+If a shield doesn't pass a pin through, take that signal from the layer below it or from the ICSP pin.
+
+ICSP pinout, for reference only (2×3 header next to the ATmega328P, pin 1 has the dot):
+`1 MISO · 2 5V · 3 SCK · 4 MOSI · 5 RESET · 6 GND`.
 
 ### 1.3 Pin conflicts and how they're avoided
 
@@ -89,10 +97,11 @@ The shields cover the Uno headers, so connect at the **top** of the stack:
 
 - **Option A (simplest):** plug female jumper wires onto the long stacking-header pins sticking up from
   the top shield: D7, D8, D11, D12, D13, 3.3V, GND.
-- **Option B:** use the ICSP header for SCK/MOSI/MISO if it's still reachable (shields often don't pass
-  it through), plus D7/D8/3.3V/GND from the top header.
-- **Option C (most robust):** put a cheap proto shield on top of the stack, solder an 8-pin female
+- **Option B (most robust):** put a cheap proto shield on top of the stack, solder an 8-pin female
   socket for the nRF module, and add the cap. No loose jumpers next to the EMG cables.
+
+Either way, the ICSP header is only a fallback, for when the continuity check in 1.2 shows a shield
+doesn't pass D11–D13 through.
 
 ### 1.6 Bring-up and test
 
@@ -212,8 +221,8 @@ fast enough or the radio is retrying a lot.
    output reaches only its own analog pin, and that neither shield touches D7, D8 or D11–D13.
 3. **Which nRF module?** Plain PCB-antenna nRF24L01+ (fine on the Uno's 3.3V pin), or a PA+LNA module
    with an external antenna (needs the 5V adapter board)?
-4. **Is the ICSP header reachable** with both shields stacked, or will you wire to the top stacking
-   pins or a proto shield?
+4. **Do both shields pass D11–D13 through** to the top of the stack (continuity check in 1.2), and will
+   you wire with jumpers or a proto shield?
 5. **Sample rate:** is 1 kHz still what your algorithm expects? The sketch can do 2 kHz (change
    `SAMPLING_FREQ`), but the USB line format would then use about 88 % of the link. Above that, it would need a
    binary format.
