@@ -1,121 +1,137 @@
-# Plan: nRF24L01+ on the Arduino Uno + Heart & Brain SpikerShield stack
+# Plan: EMG from the Uno + Heart & Brain SpikerShield stack to the STM32 car
 
-Goal: the Uno (with 2 SpikerShields stacked) samples EMG on A0/A1, streams it to the PC over USB,
-receives the control algorithm's 1-byte command back over USB, and forwards it to the STM32 over the
-nRF24L01+. The STM32 side is **unchanged**: it already runs `demo_full_PC_car_ctrl()`
-(`stm_car_proj/Demos/full_drive_demo.c`), which takes the same byte `pc_drive.py` sends.
+Goal: the Uno (with 2 classic Heart & Brain SpikerShields stacked) samples EMG on A0/A1 and streams it
+to the PC over USB. It receives the control algorithm's 1-byte command back over USB, and the command
+reaches the STM32 over the nRF24L01+. The STM32 side is **unchanged**: it runs
+`demo_full_PC_car_ctrl()` (`stm_car_proj/Demos/full_drive_demo.c`), which takes the same byte
+`pc_drive.py` sends.
 
-Files added:
+**The radio is not on the Uno.** It stays on the Nano ESP32, and the Uno sends it each command over a
+1-wire serial link. Section 1.1 explains why.
 
-| File | Purpose |
-|---|---|
-| `arduino_emg_acquisition/uno_nrf_tx_0x45/uno_nrf_tx_0x45.ino` | Part 1 radio test (Uno version of `nrf_tx_0x45`) |
-| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino` | Part 2 full sketch |
-| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/emg_ctrl_bridge.py` | Optional test harness for the serial link (use your own control script for real runs) |
+```
+ Shield 1 ─A0─┐
+              ├─ Uno ──USB──► PC control alg ──USB──► Uno ──D2 UART──► Nano ESP32 ──nRF──► STM32
+ Shield 2 ─A1─┘   (1 kHz samples up, 1 command byte / 50 ms down)                   (speed + steering)
+```
 
-Both sketches compile for `arduino:avr:uno` with RF24 1.6.2 (full sketch: 5.9 KB flash, 688 B RAM).
-Neither has been run on hardware yet.
+| File | Board | Purpose |
+|---|---|---|
+| `arduino_emg_acquisition/uno_link_test_0x45/` | Uno | Part 1 end-to-end link test (sends `0x45`) |
+| `arduino_emg_acquisition/nrf_uart_bridge/` | Nano ESP32 | Receives commands from the Uno, transmits them over the nRF |
+| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/` | Uno | Part 2 full sketch |
+| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/emg_ctrl_bridge.py` | PC | Optional test harness for the PC side (use your own control script for real runs) |
 
-> The existing `nrf_tx_*` sketches target the **Nano ESP32** (`D9`, `LED_RED`, …) and will not compile
-> for the Uno. That's why separate Uno sketches were needed.
+All three sketches compile (`arduino:avr:uno` and `arduino:esp32:nano_nora`, RF24 1.6.2) with no
+warnings. The Nano's frame parser passed a PC unit test (clean, corrupted, split and misaligned
+streams). **None of it has run on hardware yet.**
 
 ---
 
-## Part 1: Wiring the radio
+## Part 1: Pins and wiring
 
-### 1.1 What the SpikerShield stack already uses
+### 1.1 What the SpikerShields put on the Uno's pins
 
-From Backyard Brains' own Uno firmware for this shield (`BackyardBrains/SpikerShield`, `Heart-And-Brain/`):
+Checked against all four official schematics of the classic Heart & Brain SpikerShield (v1.0 Nov
+2014, v1.1, v1.3 Jun 2015, v1.51 SMT; `backyardbrains.com/products/files/`) and every sketch in
+`BackyardBrains/SpikerShield/Heart-And-Brain`:
 
-| Uno pin | Used by | Notes |
+| Uno pin | On every shield revision | Notes |
 |---|---|---|
-| A0, A1 | EMG signal, one per shield | Your setup (A2 was the 3rd shield) |
-| D0, D1 | USB serial to the PC | Never use for anything else |
-| D5 | "Message impulse" event-marker output in BYB's Spike Recorder sketch | Optional; avoid it anyway |
-| D10 | **Carrier output** in BYB's "Heart & Brain SpikerBox **Uno**" firmware | Only on that variant; avoid it |
-| D13 | Power LED in that same variant (also the Uno's own "L" LED) | Shared with SPI SCK, see below |
+| A0–A5 | Channel-select jumper (J2/JP9): the shield's output goes to whichever pin is jumpered | Yours: bottom shield on A0, top on A1 |
+| D0, D1 | Nothing on the shield (USB serial to the PC) | Never use for anything else |
+| **D2** | **Nothing** | **Used for the link to the Nano** |
+| D3 | Relay coil (v1.0/v1.1 only) | Avoid |
+| D4, D7 | Buttons: 5V → button → pin, 10 kΩ pull-down | Avoid. Driving these LOW and pressing a button shorts 5V to the pin |
+| **D5** | **Nothing** | SoftwareSerial's unused RX pin (no wire) |
+| D6 | Speaker, pin → speaker → GND | Avoid |
+| D8–D13 | **One LED per pin, straight to GND, no resistor** (LED1–LED6) | Avoid. See 1.2 |
+| 3.3V | Nothing | |
 
-Your 3-channel sketch never drives D10, and it still gets signal. That suggests your shields don't need
-the carrier, but it hasn't been confirmed (see Questions).
+No Backyard Brains Heart & Brain firmware uses the LEDs, buttons or speaker. The `HeartAndBrainSpikerBoxUno`
+firmware's "carrier on D10" is for the standalone SpikerBox, which has its own ATmega328PB and an AM
+modulator. It doesn't apply to this shield. BYB's Uno sketch for the shield
+(`SpikeRecorderSpikerShield_V1_1`) reads A0–A5 and pulses D5 as an event marker, nothing else.
 
-### 1.2 Pin map
+### 1.2 Why the radio can't go on the Uno
 
-| nRF24L01+ | Uno pin (wire here, top of the stack) | ICSP equivalent (only if you can't reach D11–D13) | Why |
-|---|---|---|---|
-| VCC | **3.3V** (never 5V) | – | nRF supply max is 3.6 V |
-| GND | GND | pin 6 | |
-| CE | **D7** | – | Free on the shield; D9/D10 avoided |
-| CSN | **D8** | – | Free on the shield; D10 avoided (carrier) |
-| SCK | D13 | pin 3 | Hardware SPI, fixed |
-| MOSI | D11 | pin 4 | Hardware SPI, fixed |
-| MISO | D12 | pin 1 | Hardware SPI, fixed |
-| IRQ | not connected | – | Not needed (could go to D2 later) |
+The nRF24L01+ talks over SPI, and the Uno's hardware SPI exists **only** on D11 (MOSI), D12 (MISO) and
+D13 (SCK). The ICSP header is the same copper, not a separate set of pins. Each of those pins has a shield
+LED going straight to GND with no resistor, on both of your shields:
 
-Add a **10 µF (or larger) capacitor across the radio's VCC/GND**, right at the module.
+- An LED with no resistor holds its pin at about its forward voltage, roughly 2 V.
+- **SCK and MOSI:** the Uno tries to drive 5 V, but the LEDs hold the line near 2 V. The nRF needs at
+  least 2.31 V (0.7 × 3.3 V) to read a HIGH, so clock and data bits get lost. The pin also has to source
+  well past the ATmega's 40 mA absolute maximum.
+- **MISO:** the nRF answers with a weak 3.3 V signal. The LEDs pull it to about 1.7 V. The Uno needs
+  3.0 V to read a HIGH, so it reads all zeros and the radio looks "not detected".
+- Bit-banged SPI on the free A2–A5 pins would avoid the LEDs. But the ATmega328P datasheet warns that
+  switching digital outputs on the analog port during a conversion adds noise to A0/A1.
 
-**Connect SCK/MOSI/MISO to D13/D11/D12 on the top shield's header.** On the Uno these are the same
-signals as ICSP pins 3/4/1, so you never need the ICSP header. The 3/4/1 in that column are ICSP pin
-numbers, not Arduino pin numbers.
+So the Uno does no SPI at all. **This setup never drives D8–D13**, so the shield LEDs stay dark.
 
-This works as long as both shields pass D11–D13 through (stacking headers whose pins stick out the top).
-To check, stack the shields and use a multimeter in continuity mode: top shield's D13 ↔ Uno ICSP pin 3,
-D11 ↔ ICSP pin 4, D12 ↔ ICSP pin 1. A beep on all three means the top of the stack carries SPI.
-If a shield doesn't pass a pin through, take that signal from the layer below it or from the ICSP pin.
+### 1.3 Wiring
 
-ICSP pinout, for reference only (2×3 header next to the ATmega328P, pin 1 has the dot):
-`1 MISO · 2 5V · 3 SCK · 4 MOSI · 5 RESET · 6 GND`.
+**Uno → Nano ESP32 (the link):**
 
-### 1.3 Pin conflicts and how they're avoided
+| From | To | Why |
+|---|---|---|
+| Uno **D2** (top shield's female header) | **10 kΩ** → junction → Nano **D0 (RX0)** | Uno sends 5 V. The ESP32 is **not** 5 V tolerant |
+| Junction | **20 kΩ** (or two 10 kΩ in series) → GND | Divider: 5 V × 20/30 = **3.33 V** at the Nano. Also limits backfeed into an unpowered Nano to about 0.5 mA |
+| Uno GND | Nano GND | Required: the link needs a shared ground |
+| Nano D1 (TX0) | not connected | One-way link |
+| Uno D5 | not connected | SoftwareSerial's RX pin, unused (the sketch turns its interrupt off) |
 
-1. **D10 (SS).** On an AVR in SPI master mode, D10 has to stay an output, or SPI can drop out of master mode.
-   `SPI.begin()` sets it that way. Since some H&B boards use D10 as a carrier, CSN goes on D8 instead.
-   Nothing else should be wired to D10.
-2. **D13 = SCK.** The Uno's "L" LED (and any shield LED on D13) will flicker while the radio is used.
-   That's harmless, but don't use `LED_BUILTIN` for status. The sketches report status over serial instead.
-3. **D11/D12/D13 through the shields.** If a shield has anything on these pins (LED, button, resistor),
-   it loads the SPI lines. MISO is the sensitive one because the nRF drives it weakly at 3.3 V. The test
-   in 1.6 checks this: if the radio is detected and gets ACKs **with both shields stacked**, there's no conflict.
-4. **Timer1.** The full sketch uses Timer1 for 1 kHz sampling. That disables `analogWrite` on D9/D10 and
-   the Servo library. Nothing in this design uses those.
-5. **Radio noise on the EMG.** TX bursts draw roughly 12 mA spikes that can show up on A0/A1 through a
-   shared ground. The test sketch prints A0/A1 so you can compare readings with the radio on and off.
-   Mitigations: the VCC cap, short radio GND wire back to the Uno's GND, and keeping the antenna away
-   from the electrode cables.
+**Nano ESP32 → nRF (unchanged from your working setup):**
 
-### 1.4 Power and logic levels
+| HW-200 adapter / nRF | Nano ESP32 |
+|---|---|
+| VCC | **VBUS (5 V)**. The HW-200's AMS1117 regulator needs 5 V in and gives the PA+LNA its 3.3 V. (A bare module without the adapter goes on 3V3.) |
+| GND | GND |
+| CE | D9 |
+| CSN | D10 |
+| SCK | D13 |
+| MOSI | D11 |
+| MISO | D12 |
+| IRQ | not connected |
 
-- **Power:** the Uno R3's 3.3V pin comes from an LP2985 regulator (≈150 mA). That's fine for a plain
-  nRF24L01+ module (≈12–14 mA). A **PA+LNA module** (the one with the external antenna, ≈115 mA peaks)
-  should instead go on an nRF24 "socket adapter" board with its own regulator, powered from **5V**.
-- **Logic:** the nRF24L01+ inputs are 5 V tolerant, so the Uno's 5 V CE/CSN/SCK/MOSI are OK. Its 3.3 V
-  MISO clears the Uno's 3.0 V input-high threshold, but with little margin. This is the standard RF24 + Uno
-  setup and normally works. If MISO turns out flaky, the adapter board or a level shifter fixes it.
+**Power:** the Nano runs from its own USB cable, which also gives you a debug Serial Monitor. VBUS
+carries 5 V only while USB is plugged in. The PA+LNA module draws up to about 115 mA in TX, which is fine
+on USB. Keep `RF24_PA_LOW` (already set) and run the radio's GND wire straight back to the Nano.
 
-### 1.5 Physical access with shields stacked
+**Backyard Brains firmware compatibility:** no BYB Heart & Brain sketch or shield revision uses D2 or D5.
+If you flash BYB firmware back onto the Uno later, D2 is just an input and the Nano receives nothing.
+There's no conflict either way.
 
-The shields cover the Uno headers, so connect at the **top** of the stack:
+### 1.4 Link format and timing
 
-- **Option A (simplest):** plug female jumper wires onto the long stacking-header pins sticking up from
-  the top shield: D7, D8, D11, D12, D13, 3.3V, GND.
-- **Option B (most robust):** put a cheap proto shield on top of the stack, solder an 8-pin female
-  socket for the nRF module, and add the cap. No loose jumpers next to the EMG cables.
+- Uno → Nano: SoftwareSerial TX on D2, **57600 baud 8N1**, 3-byte frame `[0xA5][cmd][cmd ^ 0xFF]`.
+- The Nano drops any frame whose sync byte or complement doesn't match, then resyncs on the next `0xA5`.
+- SoftwareSerial turns interrupts off for each byte it sends (about 174 µs). The full sketch therefore
+  sends each frame right after a sampling interrupt finishes. The frame takes about 520 µs, which fits
+  in the roughly 770 µs gap before the next sample, so 1 kHz sampling is never delayed. D2 is on Port D,
+  not the analog port.
+- If several frames queue up on the Nano (for example while a radio retry is running), it transmits only
+  the newest one. Any E-STOP bit seen in the queue is kept.
 
-Either way, the ICSP header is only a fallback, for when the continuity check in 1.2 shows a shield
-doesn't pass D11–D13 through.
+### 1.5 Bring-up and test
 
-### 1.6 Bring-up and test
-
-1. **Bare Uno first (no shields).** Wire the radio per 1.2. In Arduino IDE: Library Manager → install
-   **RF24 by TMRh20** (it isn't currently installed in your IDE). Board = **Arduino Uno**. Open and upload
-   `uno_nrf_tx_0x45.ino`. Serial Monitor at **115200**.
-   - `NRF24 not detected` → wiring or power (MOSI/MISO swapped is the usual cause).
-   - `printPrettyDetails()` should show channel 76, 250 KBPS, TX address `0x31304b4f4a` ("JOY01").
+1. **Nano:** open `nrf_uart_bridge.ino`, choose Board = **Arduino Nano ESP32**, and upload. Open the
+   Serial Monitor at 115200. You should see a status line every second with `frames ok=0`.
+   Fast red blinking means the radio wasn't detected (same wiring as before).
 2. **STM32:** in `main.c` USER CODE BEGIN 2, enable only `demo_nrf_rx_led_run();` and flash.
-   No new STM32 code is needed: this is the same receiver used with the Nano ESP32.
-   - Expected: Uno prints `ACK`, and STM32 **LD2 turns on**. `rx_count` climbs in Live Expressions.
-3. **Repeat with both shields stacked** and the radio wired to the top of the stack. ACKs should still
-   come through. Then attach electrodes and compare A0/A1 values with the radio unplugged and plugged in.
-4. Put `demo_full_PC_car_ctrl();` back in `main.c` for Part 2.
+3. **Uno (shields stacked):** wire the link per 1.3, upload `uno_link_test_0x45.ino` (Board = Arduino
+   Uno), and open its Serial Monitor at 115200.
+   - Expected: the Nano shows `frames ok` and `radio ack` climbing about 10 per second with `last=0x45`.
+     The Nano's LED is green and the **STM32 LD2 is on**.
+   - `frames ok` stuck at 0: check the D2 → divider → D0 wiring and the shared GND.
+   - `frames bad` climbing: check the divider values and the baud rate (57600 on both).
+   - Frames OK but radio failing: it's the radio side, same troubleshooting as before (see the
+     README).
+4. **Unplug the D2 wire:** LD2 should go off. That proves the data really comes from the Uno.
+5. **Noise check:** compare the A0/A1 values the Uno prints with the Nano/radio powered on and off,
+   electrodes attached.
+6. Put `demo_full_PC_car_ctrl();` back in `main.c` for Part 2.
 
 ---
 
@@ -124,17 +140,7 @@ doesn't pass D11–D13 through.
 Sketch name note: you asked for `full_2_channel_wireless_ctrl_alg.ioc`. `.ioc` is a CubeMX file, so the
 Arduino sketch is `.ino`, and it lives in a folder with the same name (the Arduino IDE requires that).
 
-### 2.1 Data flow
-
-```
- Shield 1 ─A0─┐                                                        ┌─ EMDM (speed, I2C)
-              ├─ Uno: Timer1 ISR @1 kHz → ring buffer → USB TX ─► PC control alg
- Shield 2 ─A1─┘                                                        │
-                Uno: USB RX (1 byte / 50 ms) → radio.write() ─nRF─► STM32 ─┤
-                                                                       └─ servo (steering, PWM)
-```
-
-### 2.2 Changes from the 3-channel sketch
+### 2.1 Changes from the 3-channel sketch
 
 | 3-channel | 2-channel |
 |---|---|
@@ -142,21 +148,19 @@ Arduino sketch is `.ino`, and it lives in a folder with the same name (the Ardui
 | `"%04d %04d %04d"`, buffer 20 | `"%04d %04d"`, buffer 12 |
 | `MATLAB_BAUD_RATE 250000` | `PC_BAUD_RATE 250000` (same speed; exact on a 16 MHz Uno) |
 | `micros()` busy-wait timing in `loop()` | **Timer1 interrupt** at 1 kHz + 64-sample ring buffer |
-| no radio | nRF24 TX + USB RX command forwarding |
+| no commands | Reads the PC's command byte and sends it to the Nano (1.4) |
 
-**Why the timer interrupt:** `radio.write()` blocks for about 1.5 ms when the packet is ACKed first time,
-and up to about 13 ms when it has to retry. Inside the old busy-wait loop, that would skip samples and
-break the 1 kHz timing your algorithm depends on. With the interrupt, sampling stays exact and the ring
-buffer covers 64 ms of radio stall.
+**Why the timer interrupt:** sampling stays exactly on time whatever `loop()` is doing (USB output,
+sending a frame). The ring buffer gives 64 ms of slack if the PC is slow to read.
 
-### 2.3 Serial contract (what your Python script must do)
+### 2.2 Serial contract (what your Python script must do)
 
 **Uno → PC** (250000 baud, 8N1):
 - One line per sample: `"AAAA BBBB\r\n"`, where AAAA = A0 and BBBB = A1, both zero-padded 0–1023.
   1000 lines/s, about 44 % of the link.
 - Lines starting with `#` are status messages, not samples: `# READY ...` at boot, then once a second
-  `# tx_ok=N tx_fail=N overflow=N`. **Skip any line starting with `#`.** Set `STATUS_PERIOD_MS 0`
-  to turn the status lines off.
+  `# link_tx=N overflow=N`. **Skip any line starting with `#`.** Set `STATUS_PERIOD_MS 0` to turn the
+  status lines off.
 - Opening the port **resets the Uno** (DTR). Wait about 2 s after opening, then flush the input buffer.
 
 **PC → Uno:**
@@ -164,68 +168,70 @@ buffer covers 64 ms of radio stall.
   `0x01` forward, `0x02` slow, `0x04` left, `0x08` right, `0x10` E-STOP.
 - Send one roughly every **50 ms** (the STM32 control tick). Never let the gap reach **200 ms**, or the STM32 failsafe
   E-stops the car.
-- If several bytes arrive between radio sends, the Uno forwards only the newest. If any of them had the
-  E-STOP bit, that bit is kept.
+- Send one byte at a time, not bursts. If several arrive together, the Uno forwards only the newest, but
+  keeps any E-STOP bit.
 - On exit or crash, send E-STOP a few times, like `pc_drive.py` does.
 
-`emg_ctrl_bridge.py` is a minimal reference that follows this contract. Its `control_algorithm()` is just
-a threshold placeholder. Running it with `--dry-run` proves the full chain (Uno receives bytes →
-`tx_ok` climbs → STM32 `cmd_rx_count` climbs) while only ever sending E-STOP, so the wheels can't move.
+`emg_ctrl_bridge.py` is a minimal reference that follows this contract. Running it with `--dry-run`
+proves the whole chain while only ever sending E-STOP, so the wheels can't move.
 
-### 2.4 Radio settings
+### 2.3 Radio settings (on the Nano)
 
 Same as the STM32: `"JOY01"`, channel 76, 250 kbps, PA LOW, 32-byte static payload, auto-ACK, CRC16.
-The only change is TX-side `setRetries(2, 5)` (750 µs × 5 retries) instead of RF24's default `(5, 15)`,
-which could block for about 40 ms. Retries only affect the transmitter, so the STM32 doesn't need any change.
+TX-side `setRetries(2, 5)` (750 µs × 5 retries, worst case about 13 ms) keeps each packet well inside the
+50 ms command period. Retries only affect the transmitter, so the STM32 doesn't need any change.
 
-### 2.5 Failsafe behaviour
+### 2.4 Failsafe behaviour
 
-- The Uno transmits **only** when the PC sends a byte. If the script stops, USB is unplugged or the
-  Uno resets, the STM32 stops receiving and E-stops after 200 ms (existing `KEY_TIMEOUT_MS`).
-- At boot the Uno sends one E-STOP.
-- If the radio isn't detected, the Uno doesn't sample at all and prints `# ERROR nRF24 not detected`
-  once a second.
+- The Uno sends a frame **only** when the PC sends a byte, and the Nano transmits only when a valid
+  frame arrives. If the script, the Uno, the link or the Nano stops, the STM32 stops receiving and
+  E-stops after 200 ms (existing `KEY_TIMEOUT_MS`).
+- At boot the Uno sends one E-STOP frame.
 
-### 2.6 Timing and resource budget
+### 2.5 Timing and resource budget
 
 | Item | Value |
 |---|---|
 | Sampling interrupt | 2 × `analogRead` ≈ 0.23 ms of every 1 ms |
 | USB uplink | 11 B × 1000/s = 11 kB/s of 25 kB/s |
-| Radio write | ≈1.5 ms good packet, ≈13 ms worst case (6 tries) |
-| Ring buffer slack | 64 ms |
-| RAM / flash | 688 B of 2 KB / 5.9 KB of 32 KB |
+| Link frame to the Nano | ≈ 0.52 ms, sent in the gap after a sample (no sampling delay) |
+| Radio write (Nano) | ≈ 1.5 ms good packet, ≈ 13 ms worst case |
+| Ring buffer slack (Uno) | 64 ms |
+| Uno RAM / flash | 690 B of 2 KB / 5.8 KB of 32 KB |
 
-If `overflow` in the status line ever goes above 0, samples were dropped. That means the PC isn't reading
-fast enough or the radio is retrying a lot.
+If `overflow` in the status line ever goes above 0, samples were dropped because the PC isn't reading
+fast enough.
 
-### 2.7 Bring-up order
+### 2.6 Bring-up order
 
 1. Part 1 passes with both shields stacked.
-2. Flash `full_2_channel_wireless_ctrl_alg.ino`. Open the Serial Monitor at **250000** for a moment: you
-   should see `# READY`, a stream of `0512 0498` lines, and `# tx_ok=1 ...` (the boot E-STOP). **Close it.**
+2. Flash `full_2_channel_wireless_ctrl_alg.ino` to the Uno. Open the Serial Monitor at **250000** for a
+   moment: you should see `# READY`, a stream of `0512 0498` lines, and `# link_tx=1 ...` (the boot E-STOP).
+   **Close it.**
 3. STM32 running `demo_full_PC_car_ctrl()`, **wheels off the ground**.
-4. Run `emg_ctrl_bridge.py COMx --dry-run`: check about 1000 samples/s and that `tx_ok` climbs about 20/s with
-   `tx_fail` near 0. STM32 `cmd_rx_count` should climb too, with the car staying stopped.
-5. Switch to your own control-algorithm script, following 2.3. Run with the wheels still off the ground
+4. Run `emg_ctrl_bridge.py COMx --dry-run`. Check for about 1000 samples/s and `link_tx` climbing about 20/s
+   on the Uno. On the Nano monitor, `frames ok` and `radio ack` should climb with `bad` near 0, and STM32
+   `cmd_rx_count` should climb too, with the car staying stopped.
+5. Switch to your own control-algorithm script, following 2.2. Run with the wheels still off the ground
    first and watch `keys`, `steer_deg` and `emdm.EMDM_DRIVE_SPEED` in Live Expressions.
 
 ---
 
 ## Questions for me
 
-1. **Which shield revision do you have?** Classic Heart & Brain SpikerShield, or the "Heart & Brain
-   SpikerBox Uno" variant? BYB's firmware for the latter drives a carrier on D10, and that would mean D10
-   needs that signal.
-2. **How do the shields route to A0 vs A1?** Jumper, cut trace, or bent pin? I'm assuming each shield's
-   output reaches only its own analog pin, and that neither shield touches D7, D8 or D11–D13.
-3. **Which nRF module?** Plain PCB-antenna nRF24L01+ (fine on the Uno's 3.3V pin), or a PA+LNA module
-   with an external antenna (needs the 5V adapter board)?
-4. **Do both shields pass D11–D13 through** to the top of the stack (continuity check in 1.2), and will
-   you wire with jumpers or a proto shield?
+Answered:
+1. **Shield:** classic Heart & Brain SpikerShield (not the SpikerBox), on an Arduino Uno.
+2. **Channel routing:** a jumper on each shield's channel-select header, bottom shield → A0 and
+   top shield → A1. This matches the J2/JP9 header in the schematics.
+3. **Radio:** PA+LNA module (HW-232, screw-on antenna) on an HW-200 adapter, so VCC is 5V.
+4. **Pass-through:** both shields pass D0–D13 through on female headers. D2 is wired from the top.
+
+Still open:
+
 5. **Sample rate:** is 1 kHz still what your algorithm expects? The sketch can do 2 kHz (change
    `SAMPLING_FREQ`), but the USB line format would then use about 88 % of the link. Above that, it would need a
-   binary format.
+   binary format. At 2 kHz, the link frame (1.4) would also have to move to 115200 baud to still fit
+   between samples.
 6. **Line format:** does your Python script already parse `"%04d %04d"` text lines, or does it expect
    something else (binary frames, comma-separated, a header)? It also needs to skip the `#` status lines
    (or set `STATUS_PERIOD_MS 0`).
@@ -234,6 +240,5 @@ fast enough or the radio is retrying a lot.
 8. **MATLAB live plot:** the 3-channel sketch was paired with `liveplot_triple_emg.m`. Do you still need a
    MATLAB plot of the 2-channel stream? Only one program can hold the COM port, so the Python script would
    have to do the plotting, or forward the data on.
-9. **Git:** `spikershield-interface-three-channel.ino` is still untracked, and the repo has many uncommitted
-   changes from earlier work. Nothing has been committed for this. Do you want these new files committed
-   separately?
+9. **Resistors:** do you have 10 kΩ and 20 kΩ resistors (or three 10 kΩ) for the divider? Any 1:2 pair
+   from 1 kΩ:2 kΩ to 10 kΩ:20 kΩ works. Higher values limit the backfeed current better.

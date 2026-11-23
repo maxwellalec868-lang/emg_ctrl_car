@@ -6,6 +6,16 @@ Arduino code for the **Arduino Nano ESP32** (ESP32-S3) side of the EMG car.
 |---|---|
 | [nrf_tx_0x45](nrf_tx_0x45/nrf_tx_0x45.ino) | Radio link test: sends `0x45` every 100 ms. STM32 side: `demo_nrf_rx_led_run()` (LD2 turns on when it's received) |
 | [nrf_tx_cmd](nrf_tx_cmd/nrf_tx_cmd.ino) | Drive commands: type `f` (FORWARD), `s` (SLOW) or `x` (STOP) in the Serial Monitor. STM32 side: `demo_emdm_radio_run()` |
+| [nrf_uart_bridge](nrf_uart_bridge/nrf_uart_bridge.ino) | EMG setup: receives command frames from the Uno on D0 (RX0, 57600 baud) and transmits them over the nRF. STM32 side: `demo_full_PC_car_ctrl()` (or `demo_nrf_rx_led_run()` with the link test) |
+
+**Arduino Uno sketches** (Uno with 2 Heart & Brain SpikerShields stacked; no radio on the Uno, see
+[docs/uno_spikershield_nrf_plan.md](../docs/uno_spikershield_nrf_plan.md) for why and for the wiring):
+
+| Sketch | What it does |
+|---|---|
+| [uno_link_test_0x45](uno_link_test_0x45/uno_link_test_0x45.ino) | Link test: sends `0x45` frames on D2 to `nrf_uart_bridge` every 100 ms. STM32 side: `demo_nrf_rx_led_run()` |
+| [full_2_channel_wireless_ctrl_alg](full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino) | A0/A1 EMG at 1 kHz → PC over USB; PC command byte → D2 → `nrf_uart_bridge` → STM32 |
+| [spikershield-interface-three-channel](spikershield-interface-three-channel.ino) | Original 3-channel acquisition (A0–A2) for the MATLAB live plot |
 
 ## Radio settings (must match `stm_car_proj/Demos/`)
 Address `"JOY01"`, channel 76, 250 kbps, PA LOW. Everything else uses the RF24 defaults
