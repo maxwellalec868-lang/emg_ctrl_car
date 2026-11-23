@@ -10,3 +10,6 @@ Release/
 # Workspace / personal IDE state
 .metadata/
 RemoteSystemsTempFiles/
+
+# Calibration recordings (a person's EMG data) from matlab_ACQ_CA
+matlab_ACQ_CA/saved_data/

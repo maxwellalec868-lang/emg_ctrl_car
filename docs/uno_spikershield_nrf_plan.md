@@ -10,7 +10,7 @@ which transmits it to the STM32 over the nRF24L01+. The STM32 side is **unchange
 
 ```
  Shield 1 ─A0─┐                         ┌──────── laptop ────────┐
-              ├─ Uno ──USB (1 kHz)────► │ MATLAB emg_ctrl_bridge │ ──USB (1 byte/50 ms)──► Nano ESP32 ──nRF──► STM32
+              ├─ Uno ──USB (1 kHz)────► │ MATLAB run_emg_car     │ ──USB (1 byte/50 ms)──► Nano ESP32 ──nRF──► STM32
  Shield 2 ─A1─┘                         │ algorithm + live plot  │                     (nrf_tx_drive)   (speed + steering)
                                         └────────────────────────┘
 ```
@@ -19,8 +19,7 @@ which transmits it to the STM32 over the nRF24L01+. The STM32 side is **unchange
 |---|---|---|
 | `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/full_2_channel_wireless_ctrl_alg.ino` | Uno | Samples A0/A1 at 1 kHz and streams them over USB |
 | `arduino_emg_acquisition/nrf_tx_drive/nrf_tx_drive.ino` | Nano ESP32 | **Existing, unchanged:** forwards every USB byte over the nRF |
-| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/emg_ctrl_bridge.m` | MATLAB | Reads the Uno, runs `control_algorithm()`, writes to the Nano, live plot |
-| `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg/parse_emg_chunk.m` | MATLAB | Parses the Uno's serial text (used by `emg_ctrl_bridge.m`) |
+| `matlab_ACQ_CA/run_emg_car.m` (+ the rest of `matlab_ACQ_CA/`) | MATLAB | Calibration, Kirby's controllers, mappings, live drive window. **See `matlab_ACQ_CA/README.md`** |
 
 Status:
 - The Uno sketch compiles with no warnings (`arduino:avr:uno`).
@@ -102,7 +101,7 @@ USB hub works too).
 
 **Two boards on one laptop:** each shows up as its own COM port, and only one program can hold each
 port. Close the Arduino Serial Monitors before starting MATLAB.
-- To tell the ports apart, run `emg_ctrl_bridge` with no arguments: it lists them.
+- To tell the ports apart, run `run_emg_car` with no arguments: it lists them.
 - Or unplug one board and see which port disappears. In Device Manager, the Uno shows as
   "Arduino Uno" (or "USB-SERIAL CH340" on a clone), and the Nano ESP32 shows as a USB serial device.
 
@@ -126,16 +125,19 @@ while electrodes are on a person. The SpikerShields are not isolated from the US
      Nano reply correct).
    - Afterwards, flash `full_2_channel_wireless_ctrl_alg` back onto the Uno and `nrf_tx_drive` back
      onto the Nano.
-4. **Both, from MATLAB (dry run):** `cd` to `arduino_emg_acquisition/full_2_channel_wireless_ctrl_alg`,
-   then:
-   - `emg_ctrl_bridge` lists the ports.
-   - `emg_ctrl_bridge("COMx", "COMy")` runs a dry run (only E-STOP is sent).
-   - Expected: the live plot scrolls, the title shows about 1000 samples/s, the Nano's LED is green,
-     and STM32 `cmd_rx_count` climbs at about 20/s while the car stays stopped.
-   - Close the figure: "Sent E-STOP. Ports closed."
+4. **Calibrate and dry run, from MATLAB:** `cd` to `matlab_ACQ_CA`, then:
+   - `run_emg_car` lists the ports.
+   - `run_emg_car("COMx", "COMy")`: view signals, then a new calibration (try 3 contractions). Check
+     the review plots and save. Press Enter for the default controller and mapping, and answer `n`
+     to "Drive LIVE?" (dry run).
+   - Expected: the EMG and controller plots respond to flexing, the title shows about 1000
+     samples/s, "mapping says" changes (A0 → FWD, A1 → SLOW), the Nano's LED is green, and STM32
+     `cmd_rx_count` climbs at about 20/s while the car stays stopped.
+   - Close the drive window, then check the "longest gap between commands" line (should be well
+     under 150 ms).
 5. **Noise check:** compare the A0/A1 traces with the Nano plugged in and unplugged.
-6. **Live:** tune `control_algorithm()`, then run `emg_ctrl_bridge("COMx", "COMy", false)`. Keep the
-   wheels off the ground first.
+6. **Live:** choose 1 (drive again) and answer `y`, with the wheels off the ground first. The window
+   starts in E-STOP: click RESUME to drive. Try the E-STOP button and spacebar.
 
 ---
 
@@ -165,7 +167,8 @@ samples stay exactly 1 ms apart, and the ring buffer absorbs up to 64 ms of slow
 - One line per sample: `"AAAA BBBB\r\n"`, where AAAA = A0 and BBBB = A1, each **exactly 4 digits**,
   0000–1023. 1000 lines/s, about 44 % of the link.
 - Lines starting with `#` are status messages, not samples.
-- Opening the port **resets the Uno** (DTR). Wait about 2 s, then flush. `emg_ctrl_bridge.m` does this.
+- Opening the port **resets the Uno** (DTR). Wait about 2 s, then flush. `run_emg_car.m` does this once
+  and keeps the port open for the whole session.
 
 **Nano port** (115200, the PC → Nano direction only):
 - **One raw byte** per decision, the same bitmask as `pc_drive.py`:
@@ -174,39 +177,45 @@ samples stay exactly 1 ms apart, and the ring buffer absorbs up to 64 ms of slow
   STM32 failsafe E-stops the car.
 - `nrf_tx_drive` forwards each byte immediately as a 1-byte radio packet.
 
-### 2.3 MATLAB script: `emg_ctrl_bridge.m`
+### 2.3 MATLAB: `matlab_ACQ_CA/`
 
-```matlab
-emg_ctrl_bridge                          % list serial ports
-emg_ctrl_bridge("COM5", "COM7")          % dry run: algorithm runs, only E-STOP is sent
-emg_ctrl_bridge("COM5", "COM7", false)   % live
-```
+The full guide is in **`matlab_ACQ_CA/README.md`**. In short:
 
-- **Main loop:**
-  - Reads every byte the Uno has sent and parses it with `parse_emg_chunk`. Reading in chunks keeps up
-    with 1000 lines/s easily; per-line `readline()` wouldn't.
-  - Keeps a 5 s rolling history for each channel.
-  - Every 50 ms it calls `control_algorithm()` and writes the byte to the Nano.
-  - The live plot (A0 and A1, last 5 s; the title shows mode, samples/s and the current command) is
-    redrawn every 100 ms with `drawnow limitrate`.
-- **Your algorithm goes in `control_algorithm(window, KEY)`** at the bottom of the file. It receives the
-  last `ALG_WINDOW_S` (default 0.1 s) of raw ADC counts as an N×2 matrix (column 1 = A0, column 2 = A1).
-  It returns a bitmask such as `KEY.FWD + KEY.LEFT`. Use `persistent` variables for filter state.
-  Keep it fast: it runs every 50 ms. The current body is a placeholder (envelope + threshold).
-- **Stopping:** close the plot window or press Ctrl+C. `emg_ctrl_bridge` is a function rather than a
-  script so its `onCleanup` runs either way: it sends E-STOP 5 times and closes both ports.
-- **Stall caveat:** if MATLAB stops sending for more than 200 ms, the STM32 E-stops. Examples: a long
-  computation in the algorithm, or dragging or resizing the figure. That's the safe direction, but it
-  means jerky driving. Keep heavy work out of the loop and don't raise the plot rate.
+- **`run_emg_car("COM_uno", "COM_nano")`** is the one entry point. It replaces running Kirby's
+  sections by hand. It opens both ports once, then:
+  1. Optional live view.
+  2. Calibration: new, load or revise. This is Kirby's Sections 1A/1B with the same protocol, math,
+     review and `.mat` files.
+  3. Pick the controller and the mapping.
+  4. Dry run or LIVE drive window.
+  5. Repeat or quit.
+- **Processing ("clean"):** Kirby's code has no digital filter, since the SpikerShield hardware
+  band-passes the signal (about 1–130 Hz). The MATLAB steps are:
+  1. Counts → volts (`counts/1023*5 - 2.5`).
+  2. 250 ms moving RMS.
+  3. Normalise between the user's rest and contraction RMS from calibration.
+  4. Smoothing (control03b).
+- **Controllers:** Kirby's `control03b` (default), `control01` and `control04`, called unmodified from
+  `kirby_matlab_code/` every 20 ms. Each outputs 0–1 per channel.
+- **Mappings** turn the two outputs into the drive bits every 50 ms. Each is its own file, swappable
+  from a list in `run_emg_car.m`:
+  - `map_go_brake`: A0 → FWD, A1 → SLOW.
+  - `map_prop_go_brake`: the same, but how often the bit is sent ∝ contraction strength.
+  - `map_steer`: A0 → LEFT, A1 → RIGHT, both → FWD.
+- **Drive window:** EMG and controller plots, Kirby's sliders, an activation-level slider, and an
+  **E-STOP button/spacebar** that stays stopped until RESUME. LIVE mode starts stopped.
 
 ### 2.4 Failsafe behaviour
 
 - `nrf_tx_drive` transmits only when a byte arrives from MATLAB. If MATLAB stops, the Nano's USB is
   unplugged or the Nano resets, the STM32 hears nothing and E-stops after 200 ms (existing
   `KEY_TIMEOUT_MS`).
-- If the Uno stops (unplugged or reset), MATLAB stops getting data. The algorithm keeps seeing the last
-  window. To catch this, add a check in your algorithm, or watch samples/s in the plot title.
-- MATLAB sends E-STOP at startup, while waiting for the Uno, and 5 times on exit.
+- If the Uno stops sending (unplugged or reset) for 0.25 s, the drive window sends E-STOP until data
+  returns.
+- E-STOP is sent when `run_emg_car` starts, and 5 times whenever a drive window closes. It's also sent
+  5 times on any exit: quit, error or Ctrl+C.
+- Each drive prints its longest gap between commands. If it's over ~150 ms, the laptop is drawing too
+  slowly: raise `PLOT_PERIOD_S` in `emg_ctrl_bridge.m`.
 
 ### 2.5 Timing and resource budget
 
@@ -216,7 +225,8 @@ emg_ctrl_bridge("COM5", "COM7", false)   % live
 | Uno → PC | 11 B × 1000/s = 11 kB/s of 25 kB/s |
 | Uno RAM / flash | 524 B of 2 KB / 3.8 KB of 32 KB |
 | MATLAB parse | ≈ 3 ms per second of data |
-| PC → Nano | 1 byte / 50 ms |
+| MATLAB controller tick | every 20 ms (fixed schedule) |
+| PC → Nano | 1 byte / 50 ms (fixed schedule, averages exactly 50 ms) |
 | Radio write (Nano) | ≈ 1.5 ms good packet; RF24 default retries, worst case ≈ 40 ms (still inside the 50 ms period) |
 
 ---
@@ -230,14 +240,13 @@ Answered:
 3. **Radio:** PA+LNA module (HW-232, screw-on antenna) on an HW-200 adapter, so VCC → Nano VBUS (5V).
 4. **Pass-through:** both shields pass D0–D13 through. No longer matters, since the Uno uses only A0/A1.
 5. **PC side:** MATLAB, since the EMG control algorithms are already written in MATLAB, plus live graphing.
+6. **Command mapping:** build all three (go/brake, proportional go/brake, steer) as swappable files so
+   the team can test them on the car.
 
 Still open:
 
-6. **Sample rate:** is 1 kHz still what your algorithm expects? The sketch can do 2 kHz (change
-   `SAMPLING_FREQ` and `FS` in `emg_ctrl_bridge.m`), but the text format would then use about 88 % of
-   the link. Above that, it would need a binary format.
-7. **Algorithm input:** does your algorithm work on raw ADC counts, or does it expect volts, filtered
-   or centred data, or a different window length? Change `ALG_WINDOW_S`, or convert inside
-   `control_algorithm()`.
-8. **Command mapping:** how should your algorithm's outputs map to the 5 bits (forward, slow, left,
-   right, E-STOP)? The STM32 ramps speed while FWD is held and cruises when nothing is held.
+7. **control02:** do you want Kirby's recursive-filter controller too? It needs its memory split per
+   channel first (today both channels share it).
+8. **DC offset:** the volts conversion assumes the shield's reference is exactly 2.5 V. Any offset
+   counts as "signal" in the RMS. Calibration absorbs this, but subtracting each channel's resting
+   mean would give the controllers more range. Do you want that (it changes Kirby's math slightly)?

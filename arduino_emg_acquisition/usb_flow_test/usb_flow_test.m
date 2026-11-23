@@ -35,8 +35,8 @@ NANO_BAUD     = 115200;   % same as nrf_tx_drive.ino
 FS            = 1000;
 SEND_PERIOD_S = 0.05;     % same command rate as emg_ctrl_bridge.m
 
-% parse_emg_chunk.m lives next to emg_ctrl_bridge.m
-addpath(fullfile(fileparts(mfilename('fullpath')), '..', 'full_2_channel_wireless_ctrl_alg'));
+% parse_emg_chunk.m lives in matlab_ACQ_CA/ (with run_emg_car.m and emg_ctrl_bridge.m)
+addpath(fullfile(fileparts(mfilename('fullpath')), '..', '..', 'matlab_ACQ_CA'));
 
 uno = serialport(unoPort, UNO_BAUD);
 nano = serialport(nanoPort, NANO_BAUD);
