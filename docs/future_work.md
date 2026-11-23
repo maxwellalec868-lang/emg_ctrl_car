@@ -2,7 +2,7 @@
 
 Notes only. This folder is outside `stm_car_proj/`, so nothing here affects building or flashing.
 
-## 1. Check the EMDM I2C pull-ups (do this when the multimeter is available)
+## 1. Check the EMDM I2C pull-ups (`RESOLVED`)
 
 **Why:** I2C lines are open-drain. Devices only pull SDA/SCL *low*, so a pull-up resistor must pull them high.
 - `GPIO_PU` in the demo turns on the STM32's **internal** pull-up. It is weak (about 40 kΩ), so edges rise slowly. That is out of spec at 100 kHz, but it often works with short wires.
@@ -21,7 +21,11 @@ Notes only. This folder is outside `stm_car_proj/`, so nothing here affects buil
 
 Current setting: **`GPIO_PU`** (not yet verified).
 
-## 2. Radio failsafe / heartbeat
+### Answer / Resolution
+- I checked the pull ups on the EMDM when it was powered on and they showed 0 V indicating that the EMDM does not have pull ups enabled. So I made sure to enable 
+  the pull up resistors on the STM32.
+
+## 2. Radio failsafe / heartbeat (`RESOLVED`)
 **Done in `Demos/full_drive_demo.c`:** `pc_drive.py` sends the key mask every 50 ms (heartbeat), and the STM32 does an emergency stop if no packet arrives for 200 ms (`KEY_TIMEOUT_MS`).
 
 **Still open in `demo_emdm_radio_run()`:** the car **keeps its last speed if the radio link drops**.
@@ -34,5 +38,5 @@ The `I2C_Master_TX` / `I2C_Master_RX` busy-wait loops have no timeout, so a stuc
 ## 4. Speed ramp in the app layer
 "Gradually go to speed X" needs a clock, so it belongs above the driver: every N ms, call `EMDM_Change_Drive_Speed()` by a small step until the target is reached.
 
-## 5. Shared command IDs
+## 5. Shared command IDs (`RESOLVED`)
 Done: `arduino_emg_acquisition/nrf_tx_cmd` sends `[command, step]` from Serial Monitor keys. The command IDs (`0x01` FORWARD, `0x02` SLOW, `0x03` STOP) are still defined twice, in `Demos/demo_emdm.c` and in the sketch, so they must be changed in both places. A shared header is possible later, but Arduino sketches can only include files outside their folder through a library or a copied file.
